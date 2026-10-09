@@ -874,7 +874,7 @@ const I18N = {
     gatesFail: (n) => `${n} 项未过`,
     gatePill: (okN, total) => `质量门 ${okN} / ${total}`,
     kpi: {
-      segments: '规划视频段', segmentsSub: (cap) => `单段上限 ${cap} 秒；尚未派发`,
+      segments: '规划视频段', segmentsSub: (cap) => `规划上限 ${cap} 秒；非执行记录`,
       cuts: '分镜', cutsSub: (avg) => `平均 ${avg} 秒一切`,
       time: '预估总时长', timeSub: (t) => `目标 ${t}`,
       batches: '建议分组', batchesSub: '按场景与光照归组；非实际任务批次',
@@ -935,7 +935,7 @@ const I18N = {
     gatesFail: (n) => `${n} failed`,
     gatePill: (okN, total) => `Quality gates ${okN} / ${total}`,
     kpi: {
-      segments: 'Planned segments', segmentsSub: (cap) => `capped at ${cap}s; not dispatched`,
+      segments: 'Planned segments', segmentsSub: (cap) => `planned cap ${cap}s; not an execution record`,
       cuts: 'Cuts', cutsSub: (avg) => `${avg}s per cut on average`,
       time: 'Estimated total', timeSub: (t) => `target ${t}`,
       batches: 'Suggested groups', batchesSub: 'grouped by scene + lighting; not dispatched batches',

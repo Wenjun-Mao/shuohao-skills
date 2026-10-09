@@ -99,6 +99,7 @@ for (const lang of ['zh', 'en']) {
     check(report.includes(lang === 'zh' ? '单段上限 12 秒' : 'segments capped at 12s'), 'frozen cap appears');
     check(report.includes(lang === 'zh' ? '分镜 1–8 秒' : 'cuts 1–8s'), 'frozen cut range appears');
     check(report.includes(lang === 'zh' ? '不证明执行完成' : 'does not prove execution'), 'plan is not execution evidence');
+    check(!report.includes('尚未派发') && !report.includes('not dispatched'), 'renderer does not infer undispatched state either');
     check(!report.includes('≤15') && !report.includes('a 2–5s edit'), 'hardcoded colophon is absent');
   }
   assert.deepEqual(embedded(html, 'storyboard-data'), alternate); checked++;

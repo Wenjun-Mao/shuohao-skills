@@ -938,7 +938,7 @@ const I18N = {
       segments: 'Planned segments', segmentsSub: (cap) => `planned cap ${cap}s; not an execution record`,
       cuts: 'Cuts', cutsSub: (avg) => `${avg}s per cut on average`,
       time: 'Estimated total', timeSub: (t) => `target ${t}`,
-      batches: 'Suggested groups', batchesSub: 'grouped by scene + lighting; not dispatched batches',
+      batches: 'Suggested groups', batchesSub: 'grouped by scene + lighting; not an execution record',
       lines: 'Dialogue segments', linesSub: 'the rest are picture-only',
     },
     secRhythm: 'Cut rhythm strip',

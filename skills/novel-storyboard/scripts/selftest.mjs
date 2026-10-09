@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Modified by Plotloom, 2026-10-09: planning-only report headings.
 // novel-storyboard 自测：不调模型、不花额度，只验确定性逻辑。
 // 原则与仓库里其他 skill 一致：每道质量门都要有击穿用例——
 // 证明它真的会拦，不是一个永远为真的假测试。
@@ -594,7 +595,7 @@ ok(md.includes('H3 视频提示词'), 'md 带逐段 H3 提示词');
 ok(md.includes('How the reference pictures align'), '多分镜段的对齐指令完整可复制');
 ok(md.includes('[Shot 2] At 00:03.000,'), '切点时刻原样进 md');
 ok(md.includes('老周'), 'md 说话人显示名字');
-ok(md.includes('生成批次单') && md.includes('配音对齐单'), 'md 带两张工单');
+ok(md.includes('参考图分组建议') && md.includes('台词对齐规划'), 'md 带两张规划表');
 ok(renderMarkdown(FIXTURE, { script: SCRIPT }).includes('C03'), '不给 outline 退回裸 ID');
 
 /* ---------------- render html ---------------- */
@@ -604,8 +605,8 @@ ok(html.includes('<!doctype html>'), 'html 完整文档');
 ok(!/src="http|href="http|@import|url\(http/.test(html), '零外部资源');
 ok(html.includes('分镜节奏带'), '01 分镜节奏带');
 ok(html.includes('分集分镜表'), '02 分集分镜表');
-ok(html.includes('生成批次单'), '03 生成批次单');
-ok(html.includes('配音对齐单'), '04 配音对齐单');
+ok(html.includes('参考图分组建议'), '03 参考图分组建议');
+ok(html.includes('台词对齐规划'), '04 台词对齐规划');
 ok(html.includes('✓ 质量门 17 / 17'), '页眉徽章全绿');
 ok(html.includes('class="rseg"'), '节奏带按段分组（粗分隔）');
 ok(html.includes('#seg-E01-01'), '节奏带段可跳转');
@@ -669,8 +670,8 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   ok(en.includes('Quality gates 17 / 17'), 'en 界面：页眉徽章英文');
   ok(en.includes('Cut rhythm strip'), 'en 界面：节奏带节标题英文');
   ok(en.includes('Segment cards'), 'en 界面：分镜表节标题英文');
-  ok(en.includes('Generation batches'), 'en 界面：批次节标题英文');
-  ok(en.includes('Audio alignment'), 'en 界面：配音对齐节标题英文');
+  ok(en.includes('Suggested reference groups'), 'en 界面：分组建议标题英文');
+  ok(en.includes('Planned dialogue alignment'), 'en 界面：台词规划标题英文');
   ok(en.includes('master frame'), 'en 界面：主分镜图占位标签英文');
   ok(!en.includes('导出 JSON'), 'en 界面不残留中文导出按钮');
   ok(!en.includes('生成批次单'), 'en 界面不残留中文批次标题');
@@ -680,7 +681,7 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
 }
 {
   const enMd = renderMarkdown(FIXTURE, { ...CTX, lang: 'en' });
-  ok(enMd.includes('# 渡口 · Storyboard (Episode 1)') && enMd.includes('Audio alignment'), 'en markdown 标题与节标题英文');
+  ok(enMd.includes('# 渡口 · Storyboard (Episode 1)') && enMd.includes('Planned dialogue alignment'), 'en markdown 标题与节标题英文');
 }
 {
   const zhAgain = renderHtml(FIXTURE, CTX);

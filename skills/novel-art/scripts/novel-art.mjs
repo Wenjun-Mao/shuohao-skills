@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Modified by Plotloom, 2026-10-09: explicit Cast-bearing report context.
 // novel-art — deterministic helpers for the novel-art skill (场景 + 道具).
 // Zero dependencies on purpose: the skill must work in any directory
 // without an npm install. Node 18+ (stdlib only).
@@ -150,7 +151,16 @@ export const PROP_SCALES = {
 /** 道具参考图不许有手——拿着道具的手是最常见的污染。 */
 const HANDS_BAN = /hand|finger/i;
 
-export function gateReport(doc, castNames = null) {
+function requireContext(ctx) {
+  if (!ctx || typeof ctx !== 'object' || Array.isArray(ctx)) {
+    throw new TypeError('Art context must be an object with optional cast and lang fields');
+  }
+  return ctx;
+}
+
+export function gateReport(doc, ctx = {}) {
+  requireContext(ctx);
+  const castNames = ctx.cast == null ? null : castNamesOf(ctx.cast);
   const gates = [];
   const add = (id, label, ok, detail = '') => gates.push({ id, label, ok, detail });
   const scenes = Array.isArray(doc?.scenes) ? doc.scenes : [];
@@ -245,7 +255,8 @@ export function gateReport(doc, castNames = null) {
     'no-names',
     '提示词不含角色名',
     bad.names.length === 0,
-    castNames?.length ? bad.names.join('；') : '未提供 cast.json，本门跳过（视为通过）',
+    castNames == null ? '未提供 cast.json，本门跳过（视为通过）'
+      : castNames.length ? bad.names.join('；') : '已提供 cast.json，无角色姓名需要核对',
   );
   add('variants', '变体引用完整（variantOf 存在且带 changes）', bad.variant.length === 0, bad.variant.join('；'));
   add('style-match', '风格与反向提示词匹配', bad.style.length === 0, bad.style.join('；'));
@@ -261,7 +272,8 @@ export function gateReport(doc, castNames = null) {
 /* validate                                                            */
 /* ------------------------------------------------------------------ */
 
-export function validateArt(doc, castNames = null) {
+export function validateArt(doc, ctx = {}) {
+  requireContext(ctx);
   const problems = [];
   const p = (msg) => problems.push(msg);
   if (!doc || typeof doc !== 'object') return ['art.json 不是对象'];
@@ -348,7 +360,7 @@ export function validateArt(doc, castNames = null) {
   }
 
   // 质量门失败并入违规列表
-  for (const g of gateReport(doc, castNames)) {
+  for (const g of gateReport(doc, ctx)) {
     if (!g.ok) p(`质量门未过：${g.label}${g.detail ? `（${g.detail}）` : ''}`);
   }
 
@@ -391,6 +403,7 @@ const GATE_LABELS_EN = {
   'prop-white': 'Prop sheets on pure white background, cut-out ready',
 };
 const GATE_SKIPS_EN = {
+    '已提供 cast.json，无角色姓名需要核对': 'cast.json provided, with no character names to check',
     '未提供 outline.json，本门跳过（视为通过）': 'outline.json not provided — gate skipped (treated as passing)',
     '未提供 art.json，本门跳过（视为通过）': 'art.json not provided — gate skipped (treated as passing)',
     '未提供 script.json，本门跳过（视为通过）': 'script.json not provided — gate skipped (treated as passing)',
@@ -533,8 +546,9 @@ const esc = (s) =>
 const mdRow = (cells) => `| ${cells.map((c) => String(c ?? '').replace(/\|/g, '\\|')).join(' | ')} |`;
 const mdHead = (cols) => [mdRow(cols), mdRow(cols.map(() => '---'))].join('\n');
 
-export function renderMarkdown(doc, lang = null) {
-  const t = tOf(lang ?? doc?.lang);
+export function renderMarkdown(doc, ctx = {}) {
+  requireContext(ctx);
+  const t = tOf(ctx.lang ?? doc?.lang);
   const props = doc.props ?? [];
   const out = [`# ${t.docTitle(doc.source)}`, '', `> ${t.styleLine(doc.style)}`, ''];
 
@@ -605,10 +619,11 @@ function embedDoc(doc) {
   return JSON.stringify(doc).replace(/</g, '\\u003c');
 }
 
-export function renderHtml(doc, lang = null) {
-  const code = lang ?? doc?.lang ?? 'zh';
+export function renderHtml(doc, ctx = {}) {
+  requireContext(ctx);
+  const code = ctx.lang ?? doc?.lang ?? 'zh';
   const t = tOf(code);
-  const gates = gateReport(doc);
+  const gates = gateReport(doc, ctx);
   const failed = gates.filter((g) => !g.ok);
   const scenes = doc.scenes;
   const props = doc.props ?? [];
@@ -725,7 +740,7 @@ export function renderHtml(doc, lang = null) {
   ${gates
     .map(
       (g) => `<li class="${g.ok ? 'ok' : 'bad'}"><span class="m">${g.ok ? '✓' : '✗'}</span><span>${esc(gateText(g, t.langCode).label)}${
-        !g.ok && g.detail ? `<small>${esc(g.detail)}</small>` : g.id === 'no-names' && g.detail ? `<small>${esc(g.detail)}</small>` : ''
+        g.detail && (!g.ok || g.id === 'no-names') ? `<small>${esc(gateText(g, t.langCode).detail)}</small>` : ''
       }</span></li>`,
     )
     .join('\n  ')}
@@ -993,7 +1008,7 @@ const USAGE = `novel-art.mjs — novel-art skill 的确定性工具（场景 + �
   validate <art.json> [--cast c.json]    校验；有违规逐条打印并 exit 1
                                          给了 cast.json 才查「提示词不含角色名」
   checkup <art.json> [--cast c.json]     只打印质量门 ✓/✗，有未过项 exit 1
-  render <art.json> [--html|--md] [--lang zh|en]
+  render <art.json> [--html|--md] [--lang zh|en] [--cast c.json]
                                          渲染报告到 stdout（默认 --md）
                                          界面语言优先级：--lang > art.json 顶层 lang 字段 > 中文
   styles [id]                            打印画风预设的完整内容
@@ -1030,11 +1045,11 @@ function main(argv) {
     if (!path) throw new Error(`用法：${cmd} <art.json> [--cast cast.json]`);
     const doc = readJson(path);
     const castPath = flag(rest, '--cast');
-    const names = castPath ? castNamesOf(readJson(castPath)) : null;
+    const ctx = { cast: castPath ? readJson(castPath) : null };
     if (!castPath) console.error('⚠️ 没给 --cast，跳过「提示词不含角色名」检查');
 
     if (cmd === 'checkup') {
-      const gates = gateReport(doc, names);
+      const gates = gateReport(doc, ctx);
       for (const g of gates) console.log(`${g.ok ? '✓' : '✗'} ${g.label}${!g.ok && g.detail ? ` — ${g.detail}` : ''}`);
       const failedN = gates.filter((g) => !g.ok).length;
       console.log(failedN ? `\n✗ ${failedN} 项未过` : '\n✓ 全部通过');
@@ -1042,7 +1057,7 @@ function main(argv) {
       return;
     }
 
-    const problems = validateArt(doc, names);
+    const problems = validateArt(doc, ctx);
     if (problems.length) {
       console.error(`✗ ${problems.length} 处违规：\n`);
       for (const x of problems) console.error('  ' + x);
@@ -1054,16 +1069,17 @@ function main(argv) {
 
   if (cmd === 'render') {
     const [path] = rest;
-    if (!path) throw new Error('用法：render <art.json> [--html|--md] [--lang zh|en]');
+    if (!path) throw new Error('用法：render <art.json> [--html|--md] [--lang zh|en] [--cast c.json]');
     const doc = readJson(path);
-    const lang = flag(rest, '--lang');
+    const castPath = flag(rest, '--cast');
+    const ctx = { lang: flag(rest, '--lang'), cast: castPath ? readJson(castPath) : null };
     // 图存在才挂上去；没有就渲染成占位，不影响其余内容
     const outDir = resolve(path, '..');
     for (const item of [...doc.scenes, ...(doc.props ?? [])]) {
       const rel = `images/${slug(item.name)}-sheet.png`;
       if (existsSync(resolve(outDir, rel))) item.sheetImage = rel;
     }
-    process.stdout.write((rest.includes('--html') ? renderHtml(doc, lang) : renderMarkdown(doc, lang)) + '\n');
+    process.stdout.write((rest.includes('--html') ? renderHtml(doc, ctx) : renderMarkdown(doc, ctx)) + '\n');
     return;
   }
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Modified by Plotloom, 2026-10-09: frozen limits and planning-only report copy.
 // novel-storyboard — deterministic helpers for the novel-storyboard skill (分镜).
 // Zero dependencies on purpose: the skill must work in any directory
 // without an npm install. Node 18+ (stdlib only).
@@ -873,21 +874,21 @@ const I18N = {
     gatesFail: (n) => `${n} 项未过`,
     gatePill: (okN, total) => `质量门 ${okN} / ${total}`,
     kpi: {
-      segments: '生成段', segmentsSub: (cap) => `一段一次调用，上限 ${cap} 秒`,
+      segments: '规划视频段', segmentsSub: (cap) => `单段上限 ${cap} 秒；尚未派发`,
       cuts: '分镜', cutsSub: (avg) => `平均 ${avg} 秒一切`,
       time: '预估总时长', timeSub: (t) => `目标 ${t}`,
-      batches: '生成批次', batchesSub: '同场景同光照共用环境参考图',
+      batches: '建议分组', batchesSub: '按场景与光照归组；非实际任务批次',
       lines: '台词段', linesSub: '其余是纯画面段',
     },
     secRhythm: '分镜节奏带',
     secSegments: '分集分镜表',
-    secBatches: '生成批次单',
-    secDialogue: '配音对齐单',
+    secBatches: '参考图分组建议',
+    secDialogue: '台词对齐规划',
     secGates: '质量门',
     rhythmNote: '粗分隔 = 生成段边界 · 段宽 = 分镜时长占比 · 颜色越深景别越近',
-    segmentsNote: '一段 = 一次生成：主分镜图钉 0.00 秒，子分镜图钉各自切点',
-    batchesNote: '自动汇总 · 同批段共用同一张环境参考图',
-    dialogueNote: '自动汇总 · TTS 音频对到哪一段的第几切',
+    segmentsNote: '关键帧时点规划：主分镜图在 0.00 秒，子分镜图在各自切点；实际生成以任务记录为准',
+    batchesNote: '按场景与光照自动归组；是否共用参考图由实际生成任务决定',
+    dialogueNote: '台词与分镜的规划对齐；不代表已生成配音',
     epHead: (nSeg, nCut, total, target) => `${nSeg} 段 ${nCut} 切 · 共 ${total} 秒 / 目标 ${target} 秒`,
     segHead: (total, n) => `${total} 秒 · ${n} 个分镜`,
     secBadge: (secs, n) => `${secs}s · ${n} 切`,
@@ -922,7 +923,7 @@ const I18N = {
     fmtMin: (sec) => `${Math.floor(sec / 60)} 分 ${Math.round(sec % 60)} 秒`,
     unitSeg: '段',
     unitCut: '切',
-    colophon: '分镜由模型依据剧本切分：段 = 一次生成（≤15 秒），分镜 = 段内 2–5 秒的剪切，每个分镜一张关键帧图。对齐指令、切点时刻、台词、提示词纪律全部由脚本确定性对账。分镜图出图走 codex，环境与角色设定图当参考图。',
+    colophon: (p) => `本报告是分镜与生成规划：单段上限 ${p.maxSegmentSeconds} 秒，单个分镜 ${p.minCutSeconds}–${p.maxCutSeconds} 秒，每个分镜规划一张关键帧图。质量门按本报告的冻结参数和所提供的上游内容进行确定性检查。视频调用、参考图使用、关键帧与音频是否已生成，须查看实际任务记录；本报告不证明执行完成。`,
   },
   en: {
     langCode: 'en',
@@ -934,21 +935,21 @@ const I18N = {
     gatesFail: (n) => `${n} failed`,
     gatePill: (okN, total) => `Quality gates ${okN} / ${total}`,
     kpi: {
-      segments: 'Segments', segmentsSub: (cap) => `one generation call each, capped at ${cap}s`,
+      segments: 'Planned segments', segmentsSub: (cap) => `capped at ${cap}s; not dispatched`,
       cuts: 'Cuts', cutsSub: (avg) => `${avg}s per cut on average`,
       time: 'Estimated total', timeSub: (t) => `target ${t}`,
-      batches: 'Generation batches', batchesSub: 'same scene + lighting share one environment reference',
+      batches: 'Suggested groups', batchesSub: 'grouped by scene + lighting; not dispatched batches',
       lines: 'Dialogue segments', linesSub: 'the rest are picture-only',
     },
     secRhythm: 'Cut rhythm strip',
     secSegments: 'Segment cards',
-    secBatches: 'Generation batches',
-    secDialogue: 'Audio alignment',
+    secBatches: 'Suggested reference groups',
+    secDialogue: 'Planned dialogue alignment',
     secGates: 'Quality gates',
     rhythmNote: 'thick separators = segment boundaries · slice width = cut duration share · darker = closer shot size',
-    segmentsNote: 'one segment = one generation: the master frame pins 0.00s, sub-frames pin their own cut marks',
-    batchesNote: 'auto-computed · segments in a batch share one environment reference image',
-    dialogueNote: 'auto-computed · which segment and cut each TTS clip lands on',
+    segmentsNote: 'planned keyframe times: master at 0.00s, sub-frames at their cut marks; actual generation is recorded in the task ledger',
+    batchesNote: 'grouped by scene + lighting; actual tasks determine whether references are shared',
+    dialogueNote: 'planned dialogue-to-cut alignment; not evidence of generated audio',
     epHead: (nSeg, nCut, total, target) => `${nSeg} segments ${nCut} cuts · ${total}s total / ${target}s target`,
     segHead: (total, n) => `${total}s · ${n} cuts`,
     secBadge: (secs, n) => `${secs}s · ${n} cuts`,
@@ -983,7 +984,7 @@ const I18N = {
     fmtMin: (sec) => `${Math.floor(sec / 60)} min ${Math.round(sec % 60)} s`,
     unitSeg: 'seg',
     unitCut: 'cuts',
-    colophon: 'Cut by the model from the script: a segment = one generation call (≤15s), a cut = a 2–5s edit inside it, one keyframe per cut. Alignment lines, cut marks, dialogue and prompt discipline are all audited deterministically by the script. Frames are generated through codex with the scene and character sheets as references.',
+    colophon: (p) => `This report is a storyboard and generation plan: segments capped at ${p.maxSegmentSeconds}s, cuts ${p.minCutSeconds}–${p.maxCutSeconds}s, one planned keyframe per cut. Quality gates use the frozen parameters and supplied upstream context. Consult actual task records for video calls, reference use, generated keyframes and audio; this report does not prove execution.`,
   },
 };
 
@@ -1049,7 +1050,7 @@ export function renderMarkdown(board, ctx = {}) {
   const expanded = expandScript(ctx.script);
   const stats = computeStats(board, ctx.script);
   const eps = board.episodes;
-  const out = [`# ${t.docTitle(board.source, eps[0]?.ep, eps[eps.length - 1]?.ep)}`, ''];
+  const out = [`# ${t.docTitle(board.source, eps[0]?.ep, eps[eps.length - 1]?.ep)}`, '', `> ${t.colophon(stats.params)}`, ''];
 
   for (const [i, ep] of eps.entries()) {
     const st = stats.episodes[i];
@@ -1077,11 +1078,11 @@ export function renderMarkdown(board, ctx = {}) {
     }
   }
 
-  out.push(`## ${t.secBatches}`, '', mdHead(t.batchCols));
+  out.push(`## ${t.secBatches}`, '', t.batchesNote, '', mdHead(t.batchCols));
   for (const b of stats.batches) {
     out.push(mdRow([`${b.sceneId} ${n.scene(b.sceneId)}`, b.lighting, b.segments.join(t.listSep), b.characters.map(n.char).join(t.listSep), b.props.map(n.prop).join(t.listSep)]));
   }
-  out.push('', `## ${t.secDialogue}`, '', mdHead(t.dialogueCols));
+  out.push('', `## ${t.secDialogue}`, '', t.dialogueNote, '', mdHead(t.dialogueCols));
   for (const d of stats.dialogue) out.push(mdRow([`${d.segment}#${d.cut}`, n.char(d.speaker), d.line, d.seconds]));
   out.push('');
   return out.join('\n');
@@ -1526,7 +1527,7 @@ ${dlgRows}
   <p class="gsum">${failed.length ? `<b>${esc(t.gatesFail(failed.length))}</b>` : esc(t.gatesPass)}</p>
 </section>
 
-<p class="foot">${esc(t.colophon)}</p>
+<p class="foot">${esc(t.colophon(params))}</p>
 </div>
 
 <div class="lightbox" id="lightbox"><img alt=""></div>

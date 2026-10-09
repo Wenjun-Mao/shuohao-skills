@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Modified by Plotloom, 2026-10-09: duration display and KPI wrapping only.
 // novel-outline — deterministic helpers for the novel-outline skill.
 // Zero dependencies on purpose: the skill must work in any directory
 // without an npm install. Node 18+ (stdlib only).
@@ -6,6 +7,7 @@
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { formatReportDuration } from './report-duration.mjs';
 
 /* ------------------------------------------------------------------ */
 /* 常量与阈值                                                           */
@@ -625,7 +627,7 @@ const I18N = {
     kicker: '短剧改编大纲',
     docTitle: (s) => `${s} · 短剧改编大纲`,
     paramsLine: (p) =>
-      `${p.episodes} 集 × ${p.minutesPerEpisode} 分钟 · ${p.genre} · ${p.adaptMode}改编`,
+      `${p.episodes} 集 × ${formatReportDuration(p.minutesPerEpisode, 'zh')} · ${p.genre} · ${p.adaptMode}改编`,
     exportJson: '导出 JSON',
     gates: '质量门',
     gatesPass: '全部通过',
@@ -653,7 +655,7 @@ const I18N = {
       adaptation: '为什么这么改 · 附原文依据',
     },
     kpi: {
-      episodes: '总集数', perEp: (m) => `× ${m} 分钟`, runtime: (m) => `正片约 ${m} 分钟`,
+      episodes: '总集数', perEp: (m) => `× ${formatReportDuration(m, 'zh')}`, runtime: (m) => `分集目标时长合计约 ${formatReportDuration(m, 'zh')}`,
       beats: '爽点', beatsSub: (major, gap) => `${major} 大爆点${gap ? ` · 最大间隔 ${gap} 集` : ''}`,
       cast: '角色', castSub: (l, s, f) => `主角 ${l} · 配角 ${s} · 功能 ${f}`,
       scenes: '主场景', scenesOnce: (n) => (n ? `一次性场景 ${n}，需复用方案` : '无一次性场景'),
@@ -722,7 +724,7 @@ const I18N = {
     kicker: 'Short-drama adaptation outline',
     docTitle: (s) => `${s} · Short-Drama Adaptation Outline`,
     paramsLine: (p) =>
-      `${p.episodes} eps × ${p.minutesPerEpisode} min · ${p.genre} · ${p.adaptMode} adaptation`,
+      `${p.episodes} eps × ${formatReportDuration(p.minutesPerEpisode, 'en')} · ${p.genre} · ${p.adaptMode} adaptation`,
     exportJson: 'Export JSON',
     gates: 'Quality gates',
     gatesPass: 'All passed',
@@ -750,7 +752,7 @@ const I18N = {
       adaptation: 'Why these changes · with source evidence',
     },
     kpi: {
-      episodes: 'Episodes', perEp: (m) => `× ${m} min`, runtime: (m) => `about ${m} min of footage`,
+      episodes: 'Episodes', perEp: (m) => `× ${formatReportDuration(m, 'en')}`, runtime: (m) => `episode targets total about ${formatReportDuration(m, 'en')}`,
       beats: 'Beats', beatsSub: (major, gap) => `${major} major${gap ? ` · max gap ${gap} eps` : ''}`,
       cast: 'Cast', castSub: (l, s, f) => `leads ${l} · support ${s} · functional ${f}`,
       scenes: 'Primary scenes', scenesOnce: (n) => (n ? `${n} one-off, reuse plan required` : 'No one-off scenes'),
@@ -1258,9 +1260,9 @@ h1,h2,h3{margin:0;font-weight:400}
 .kpi{background:var(--panel);border:1px solid var(--rule);border-radius:2px;padding:11px 14px 9px}
 .kpi .l{font:500 10px/1 var(--sans);letter-spacing:.18em;color:var(--ink-3)}
 .kpi .v{font:400 28px/1.15 var(--serif);margin-top:5px}
-.kpi .v small{font:400 14px var(--serif);color:var(--ink-2)}
+.kpi .v small{display:block;font:400 14px/1.4 var(--serif);color:var(--ink-2);overflow-wrap:anywhere}
 .kpi .v.mode{font-size:21px;padding-top:5px}
-.kpi .d{font-size:11px;color:var(--ink-2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kpi .d{font-size:11px;line-height:1.4;color:var(--ink-2);margin-top:4px;overflow-wrap:anywhere}
 .kpi.accent{border-top:2px solid var(--seal)}
 
 .galert{margin:14px 0 0;border:1px solid var(--seal);background:var(--seal-soft);border-radius:2px;

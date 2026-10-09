@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Modified by Plotloom, 2026-10-09: current explicit Art context callers.
 // 自测：覆盖 novel-art.mjs 里所有确定性逻辑（场景 + 道具）。
 // 不调用任何模型，不花额度，跑一次 < 1 秒。
 //   node scripts/selftest.mjs
@@ -42,7 +43,7 @@ function eq(actual, expected, msg) {
   passed++;
 }
 const clone = () => JSON.parse(JSON.stringify(FIXTURE));
-const gate = (d, id, names = null) => gateReport(d, names).find((g) => g.id === id);
+const gate = (d, id, ctx = {}) => gateReport(d, ctx).find((g) => g.id === id);
 
 /* ---------------- 画风预设 ---------------- */
 
@@ -111,14 +112,15 @@ ok(seedFromOutline({}).props.length === 0, '空大纲的道具表也是空数组
 /* ---------------- castNamesOf ---------------- */
 
 const NAMES = castNamesOf(CAST);
+const CTX = { cast: CAST };
 ok(NAMES.includes('沈知微') && NAMES.includes('老周'), 'cast 名字提出来了');
 ok(NAMES.includes('老伯'), '别名也提出来了');
 ok(castNamesOf({ characters: [] }).length === 0, '空 cast 不炸');
 
 /* ---------------- 夹具本身 ---------------- */
 
-eq(validateArt(FIXTURE, NAMES).length, 0, '自带样例通过校验（含角色名检查）');
-ok(gateReport(FIXTURE, NAMES).every((g) => g.ok), '样例全部质量门通过');
+eq(validateArt(FIXTURE, CTX).length, 0, '自带样例通过校验（含角色名检查）');
+ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例全部质量门通过');
 eq(gateReport(FIXTURE).length, 11, '质量门共 11 道（场景 7 + 道具 4）');
 
 /* ---------------- 质量门逐项击穿 ---------------- */
@@ -168,15 +170,15 @@ eq(ANCHOR_RANGE.join('-'), '3-5', '锚点范围 3–5');
 {
   const d = clone();
   d.scenes[0].image.prompt += ' where 老周 stands';
-  ok(!gate(d, 'no-names', NAMES).ok, '提示词里出现角色名被拦');
-  ok(gate(d, 'no-names', NAMES).detail.includes('老周'), '报错点名是谁');
+  ok(!gate(d, 'no-names', CTX).ok, '提示词里出现角色名被拦');
+  ok(gate(d, 'no-names', CTX).detail.includes('老周'), '报错点名是谁');
   ok(gate(d, 'no-names').ok, '没给 cast 时这道门跳过（视为通过）');
   ok(gate(d, 'no-names').detail.includes('跳过'), '跳过时明说，不装作查过');
 }
 {
   const d = clone();
   d.scenes[1].lighting[0].prompt += ' with 老伯 in frame';
-  ok(!gate(d, 'no-names', NAMES).ok, '别名也拦（光照提示词同样查）');
+  ok(!gate(d, 'no-names', CTX).ok, '别名也拦（光照提示词同样查）');
 }
 
 // G7 变体引用
@@ -325,7 +327,7 @@ ok(html.includes('data-name="渡口-art.json"'), '下载文件名跟书名（art
   const embedded = html.match(/<script type="application\/json" id="art-data">([\s\S]*?)<\/script>/)[1];
   const round = JSON.parse(embedded.replace(/\\u003c/g, '<'));
   eq(JSON.stringify(round), JSON.stringify(FIXTURE), '导出数据与 art.json 逐字节一致');
-  eq(validateArt(round, NAMES).length, 0, '导出数据能直接喂回 validate');
+  eq(validateArt(round, CTX).length, 0, '导出数据能直接喂回 validate');
 }
 ok(html.includes('revokeObjectURL(url), 10000'), 'blob 延后回收——Safari 抢跑会存出空文件');
 
@@ -398,7 +400,7 @@ eq(FIXTURE.props.length, 2, '样例带两件叙事道具');
 {
   const d = clone();
   d.props[0].image.prompt += ' carried by 沈知微';
-  ok(!gate(d, 'no-names', NAMES).ok, '道具提示词出现角色名被拦');
+  ok(!gate(d, 'no-names', CTX).ok, '道具提示词出现角色名被拦');
 }
 // 道具没有光照门的义务
 {
@@ -430,7 +432,7 @@ eq(FIXTURE.props.length, 2, '样例带两件叙事道具');
 {
   const d = clone();
   delete d.props;
-  eq(validateArt(d, NAMES).length, 0, '没有道具块也合法——道具是可选层');
+  eq(validateArt(d, CTX).length, 0, '没有道具块也合法——道具是可选层');
   ok(gateReport(d).filter((g) => g.id.startsWith('prop-')).every((g) => g.ok), '无道具时四道道具门放行');
   ok(!renderHtml(d).includes('>道具清单<'), '无道具时报告不渲染道具区块');
 }
@@ -447,7 +449,7 @@ eq(FIXTURE.props.length, 2, '样例带两件叙事道具');
 /* ---------------- render 英文界面（--lang en）---------------- */
 
 {
-  const en = renderHtml(FIXTURE, 'en');
+  const en = renderHtml(FIXTURE, { lang: 'en' });
   ok(en.includes('lang="en"'), '英文报告 <html lang="en">');
   ok(en.includes('Export JSON'), '英文报告有 Export JSON');
   ok(en.includes('>Scene list<'), '英文报告有 Scene list');
@@ -457,23 +459,23 @@ eq(FIXTURE.props.length, 2, '样例带两件叙事道具');
   ok(!en.includes('场景清单'), '英文报告不含「场景清单」');
   ok(!en.includes('质量门'), '英文报告不含「质量门」（门的中文 label 属于质量门层，不在界面表里）');
   ok(html.includes('lang="zh"'), '默认报告仍是 <html lang="zh">');
-  ok(renderMarkdown(FIXTURE, 'en').includes('## Scene list'), 'MD 英文界面有 Scene list');
+  ok(renderMarkdown(FIXTURE, { lang: 'en' }).includes('## Scene list'), 'MD 英文界面有 Scene list');
 }
 {
   const d = clone();
   d.lang = 'en';
   ok(renderHtml(d).includes('lang="en"'), 'art.json 顶层 lang 字段生效');
-  ok(renderHtml(d, 'zh').includes('lang="zh"'), '--lang 优先于 lang 字段');
+  ok(renderHtml(d, { lang: 'zh' }).includes('lang="zh"'), '--lang 优先于 lang 字段');
 }
 {
   let threw = false;
-  try { renderHtml(FIXTURE, 'jp'); } catch { threw = true; }
+  try { renderHtml(FIXTURE, { lang: 'jp' }); } catch { threw = true; }
   ok(threw, '非内置语言直接抛错（目前内置 zh / en）');
 }
 
 // 质量门面板是报告的一部分：英文界面下门标签也要翻译（阈值由门自己算，原样保留）
 {
-  const gateEn = renderHtml(FIXTURE, 'en');
+  const gateEn = renderHtml(FIXTURE, { lang: 'en' });
   ok(gateEn.includes('Consistency anchors, 3–5'), 'EN 报告的质量门标签翻译且阈值原样保留');
   ok(!gateEn.includes('一致性锚点 3–5 个'), 'EN 报告不再出现中文门标签');
 }

@@ -306,7 +306,8 @@ ok(/e\.key === 'Escape'/.test(html), 'Esc 关闭弹层');
   ok(withImg.includes('class="zoom" data-src="images/x-sheet.png"'), '出图后图片可点，弹层拿到地址');
   ok(withImg.includes('cursor:zoom-in'), '鼠标提示可放大');
 }
-eq((html.match(/<li class="ok">/g) || []).length, 11, '11 道质量门全 ✓');
+eq((html.match(/<li class="ok">/g) || []).length, 10, '10 道已执行质量门全 ✓');
+eq((html.match(/<li class="skip">/g) || []).length, 1, '跳过的门不是执行通过');
 ok(html.includes('gatepill pass'), '页眉徽章通过态');
 ok(html.includes('未提供 cast.json'), '报告如实标注角色名检查被跳过');
 

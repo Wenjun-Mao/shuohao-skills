@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Modified by Plotloom, 2026-10-09: truthful evaluated/skipped report checks.
 // Modified by Plotloom, 2026-10-09: duration display and KPI wrapping only.
 // novel-outline — deterministic helpers for the novel-outline skill.
 // Zero dependencies on purpose: the skill must work in any directory
@@ -7,6 +8,7 @@
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gateClass, gateMarker, gateSummaryText } from './gate-summary.mjs';
 import { formatReportDuration } from './report-duration.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -182,8 +184,8 @@ export function gateReport(outline) {
   const gates = [];
   // enKey：中文标签会随条件变化的门（目前只有 refs），英文查表要另给一个键。
   // 门 id 保持稳定不动——它是日志与下游对账的凭据。
-  const add = (id, label, ok, detail = '', enKey = null) =>
-    gates.push({ id, label, ok, detail, ...(enKey ? { enKey } : {}) });
+  const add = (id, label, ok, detail = '', enKey = null, evaluated = true) =>
+    gates.push({ id, label, ok, detail, evaluated, ...(enKey ? { enKey } : {}) });
 
   const chars = Array.isArray(outline?.characters) ? outline.characters : [];
   const scenes = Array.isArray(outline?.scenes) ? outline.scenes : [];
@@ -219,6 +221,8 @@ export function gateReport(outline) {
     `叙事道具 ≤ ${th.maxProps} 件`,
     !hasProps || props.length <= th.maxProps,
     hasProps ? `${props.length} 件` : '大纲没有 props 字段，跳过',
+    null,
+    hasProps,
   );
 
   // 场景/角色使用统计（G3、G10 共用）。
@@ -264,7 +268,7 @@ export function gateReport(outline) {
   add('beat-gap', `爽点间隔 ≤ ${th.maxBeatGap} 集，无真空区`, gapOk, gapDetail);
 
   // G5 第 1 集有钩子
-  add('ep1-hook', '第 1 集有钩子', eps.length > 0 && thText(eps[0]?.hook), '');
+  add('ep1-hook', '第 1 集有钩子', eps.length > 0 && Boolean(thText(eps[0]?.hook)), '');
 
   // G6 大爆点不能到最后一集才第一次出现
   const majors = beats.filter((b) => (b?.weight ?? 'minor') === 'major').map((b) => b.episode);
@@ -604,11 +608,12 @@ const GATE_LABELS_EN = {
   'no-dialogue': 'Synopses in narrative prose, no quoted dialogue',
 };
 const GATE_SKIPS_EN = {
-    '未提供 outline.json，本门跳过（视为通过）': 'outline.json not provided — gate skipped (treated as passing)',
-    '未提供 art.json，本门跳过（视为通过）': 'art.json not provided — gate skipped (treated as passing)',
-    '未提供 script.json，本门跳过（视为通过）': 'script.json not provided — gate skipped (treated as passing)',
-    '未提供 outline/cast，本门跳过（视为通过）': 'outline/cast not provided — gate skipped (treated as passing)',
-    '未提供 cast.json，本门跳过（视为通过）': 'cast.json not provided — gate skipped (treated as passing)',
+    '大纲没有 props 字段，跳过': 'props list not provided — gate skipped, not evaluated',
+    '未提供 outline.json，本门跳过（未执行，不影响本次校验通过）': 'outline.json not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 art.json，本门跳过（未执行，不影响本次校验通过）': 'art.json not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 script.json，本门跳过（未执行，不影响本次校验通过）': 'script.json not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 outline/cast，本门跳过（未执行，不影响本次校验通过）': 'outline/cast not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 cast.json，本门跳过（未执行，不影响本次校验通过）': 'cast.json not provided — gate skipped (not evaluated; does not block validation)',
 };
 /** 报告里的门文案：英文界面取映射，未命中或中文界面回落原文。 */
 const gateText = (g, lang) => {
@@ -630,9 +635,7 @@ const I18N = {
       `${p.episodes} 集 × ${formatReportDuration(p.minutesPerEpisode, 'zh')} · ${p.genre} · ${p.adaptMode}改编`,
     exportJson: '导出 JSON',
     gates: '质量门',
-    gatesPass: '全部通过',
     gatesFail: (n) => `${n} 项未过`,
-    gatePill: (okN, total) => `质量门 ${okN} / ${total}`,
     sections: {
       decisions: '关键决策', rhythm: '爽点节奏', episodes: '分集梗概',
       episodesOverview: '分集概览', matrix: '每集调度矩阵',
@@ -727,9 +730,7 @@ const I18N = {
       `${p.episodes} eps × ${formatReportDuration(p.minutesPerEpisode, 'en')} · ${p.genre} · ${p.adaptMode} adaptation`,
     exportJson: 'Export JSON',
     gates: 'Quality gates',
-    gatesPass: 'All passed',
     gatesFail: (n) => `${n} failed`,
-    gatePill: (okN, total) => `Gates ${okN} / ${total}`,
     sections: {
       decisions: 'Key decisions', rhythm: 'Beat rhythm', episodes: 'Per-episode synopses',
       episodesOverview: 'Episode overview', matrix: 'Dispatch matrix',
@@ -855,7 +856,7 @@ export function renderMarkdown(outline, lang) {
 
   // 质量门放最前面——先看有没有病，再看内容
   out.push(`## ${t.gates}`, '');
-  for (const g of gates) out.push(`- ${g.ok ? '✅' : '❌'} ${gateText(g, t.langCode).label}${!g.ok && g.detail ? ` — ${gateText(g, t.langCode).detail}` : ''}`);
+  for (const g of gates) out.push(`- ${g.evaluated ? (g.ok ? '✅' : '❌') : '—'} ${gateText(g, t.langCode).label}${(!g.evaluated || !g.ok) && g.detail ? ` — ${gateText(g, t.langCode).detail}` : ''}`);
   out.push('');
 
   out.push(`## ${t.mdSec(1, t.sections.adaptation)}`, '', `**${t.core}**${t.pairSep}${ad.core}`, '');
@@ -1217,8 +1218,8 @@ export function renderHtml(outline, lang) {
   const gateList = `<ul class="gate">
   ${gates
     .map(
-      (g) => `<li class="${g.ok ? 'ok' : 'bad'}"><span class="m">${g.ok ? '✓' : '✗'}</span><span>${esc(gateText(g, t.langCode).label)}${
-        !g.ok && g.detail ? `<small>${esc(g.detail)}</small>` : ''
+      (g) => `<li class="${gateClass(g)}"><span class="m">${gateMarker(g)}</span><span>${esc(gateText(g, t.langCode).label)}${
+        (!g.ok || !g.evaluated) && g.detail ? `<small>${esc(gateText(g, t.langCode).detail)}</small>` : ''
       }</span></li>`,
     )
     .join('\n  ')}
@@ -1421,6 +1422,8 @@ h3.sub{font:500 12px/1 var(--sans);letter-spacing:.18em;color:var(--seal);margin
 .gate li.bad .m{color:var(--seal)}
 .gate li.bad{background:var(--seal-soft);border-radius:2px;padding-left:6px}
 .gate small{display:block;color:var(--ink-3)}
+.gate li.skip .m,.gate li.skip small{color:var(--ink-2)}
+.gate li.skip small{font-size:12px}
 .gsum{margin:10px 0 0;font-size:12px;color:var(--ink-2)}
 .gsum b{color:var(--seal)}
 
@@ -1443,7 +1446,7 @@ h3.sub{font:500 12px/1 var(--sans);letter-spacing:.18em;color:var(--seal);margin
   <h1>${esc(source)}</h1>
   <span class="sub">${esc(t.kicker)} · ${esc(t.paramsLine(params))}</span>
   <span class="right">
-    <span class="gatepill ${failed.length ? 'fail' : 'pass'}">${failed.length ? '✗' : '✓'} ${esc(t.gatePill(gates.length - failed.length, gates.length))}</span>
+    <span class="gatepill ${failed.length ? 'fail' : 'pass'}">${failed.length ? '✗' : '✓'} ${esc(gateSummaryText(gates, t.langCode))}</span>
     <button class="expo" data-name="${esc(slug(source))}-outline.json">${esc(t.exportJson)}</button>
   </span>
 </header>
@@ -1514,7 +1517,7 @@ ${scards}
 <section id="sec-gates">
   ${secHead('09', t.sections.gates, undefined)}
   ${gateList}
-  <p class="gsum">${failed.length ? `<b>${esc(t.gatesFail(failed.length))}</b>` : esc(t.gatesPass)}</p>
+  <p class="gsum">${esc(gateSummaryText(gates, t.langCode))}</p>
 </section>
 
 <p class="foot">${esc(t.colophon)}</p>
@@ -1626,9 +1629,9 @@ function main(argv) {
     const [path] = rest;
     if (!path) throw new Error('用法：checkup <outline.json>');
     const gates = gateReport(readJson(path));
-    for (const g of gates) console.log(`${g.ok ? '✓' : '✗'} ${g.label}${!g.ok && g.detail ? ` — ${g.detail}` : ''}`);
+    for (const g of gates) console.log(`${gateMarker(g)} ${g.label}${(!g.evaluated || !g.ok) && g.detail ? ` — ${g.detail}` : ''}`);
     const failed = gates.filter((g) => !g.ok).length;
-    console.log(failed ? `\n✗ ${failed} 项未过` : '\n✓ 全部通过');
+    console.log(`\n${failed ? '✗' : '✓'} ${gateSummaryText(gates)}`);
     if (failed) process.exit(1);
     return;
   }

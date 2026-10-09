@@ -595,7 +595,7 @@ ok(html.includes('人群 ×1（第 2 集）'), '折算表带生成难点明细')
 
 ok((html.match(/class="gate"/g) || []).length === 1, '质量门清单');
 eq((html.match(/<li class="ok">/g) || []).length, 14, '14 项质量门全 ✓');
-ok(html.includes('全部通过'), '通过时有总结行');
+ok(html.includes('已执行检查 14 / 14 通过'), '总结明确已执行的检查');
 ok(html.includes('gatepill pass'), '页眉徽章是通过态');
 
 // 质量门失败也要渲染出来——体检模式靠这个给诊断

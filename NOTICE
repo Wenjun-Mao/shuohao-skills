@@ -3,7 +3,8 @@ Copyright 2026 烁皓
 
 Plotloom's narrow report-renderer fork, modified 2026-10-09 by Wenjun Mao.
 Based on upstream revision 4322897e6d2bdaf66365534fd40194360c75a85f.
-Modified Art context, Outline duration display, and Storyboard planning copy;
+Modified Art context, Outline duration display, Storyboard planning copy, and
+explicit evaluated/skipped gate presentation in Art/Script/Outline/Storyboard;
 the existing validation rules and original candidate data remain authoritative.
 
 Licensed under the Apache License, Version 2.0 (the "License");

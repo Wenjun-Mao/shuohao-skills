@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Modified by Plotloom, 2026-10-09: truthful evaluated/skipped report checks.
 // Modified by Plotloom, 2026-10-09: explicit Cast-bearing report context.
 // novel-art — deterministic helpers for the novel-art skill (场景 + 道具).
 // Zero dependencies on purpose: the skill must work in any directory
@@ -7,6 +8,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gateClass, gateMarker, gateSummaryText } from './gate-summary.mjs';
 
 /* ------------------------------------------------------------------ */
 /* 画风预设（环境版）                                                    */
@@ -162,7 +164,7 @@ export function gateReport(doc, ctx = {}) {
   requireContext(ctx);
   const castNames = ctx.cast == null ? null : castNamesOf(ctx.cast);
   const gates = [];
-  const add = (id, label, ok, detail = '') => gates.push({ id, label, ok, detail });
+  const add = (id, label, ok, detail = '', evaluated = true) => gates.push({ id, label, ok, detail, evaluated });
   const scenes = Array.isArray(doc?.scenes) ? doc.scenes : [];
   const props = Array.isArray(doc?.props) ? doc.props : [];
   const bad = {
@@ -255,8 +257,9 @@ export function gateReport(doc, ctx = {}) {
     'no-names',
     '提示词不含角色名',
     bad.names.length === 0,
-    castNames == null ? '未提供 cast.json，本门跳过（视为通过）'
+    castNames == null ? '未提供 cast.json，本门跳过（未执行，不影响本次校验通过）'
       : castNames.length ? bad.names.join('；') : '已提供 cast.json，无角色姓名需要核对',
+    castNames != null,
   );
   add('variants', '变体引用完整（variantOf 存在且带 changes）', bad.variant.length === 0, bad.variant.join('；'));
   add('style-match', '风格与反向提示词匹配', bad.style.length === 0, bad.style.join('；'));
@@ -404,11 +407,11 @@ const GATE_LABELS_EN = {
 };
 const GATE_SKIPS_EN = {
     '已提供 cast.json，无角色姓名需要核对': 'cast.json provided, with no character names to check',
-    '未提供 outline.json，本门跳过（视为通过）': 'outline.json not provided — gate skipped (treated as passing)',
-    '未提供 art.json，本门跳过（视为通过）': 'art.json not provided — gate skipped (treated as passing)',
-    '未提供 script.json，本门跳过（视为通过）': 'script.json not provided — gate skipped (treated as passing)',
-    '未提供 outline/cast，本门跳过（视为通过）': 'outline/cast not provided — gate skipped (treated as passing)',
-    '未提供 cast.json，本门跳过（视为通过）': 'cast.json not provided — gate skipped (treated as passing)',
+    '未提供 outline.json，本门跳过（未执行，不影响本次校验通过）': 'outline.json not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 art.json，本门跳过（未执行，不影响本次校验通过）': 'art.json not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 script.json，本门跳过（未执行，不影响本次校验通过）': 'script.json not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 outline/cast，本门跳过（未执行，不影响本次校验通过）': 'outline/cast not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 cast.json，本门跳过（未执行，不影响本次校验通过）': 'cast.json not provided — gate skipped (not evaluated; does not block validation)',
 };
 /** 报告里的门文案：英文界面取映射，未命中或中文界面回落原文。 */
 const gateText = (g, lang) => {
@@ -428,9 +431,7 @@ const I18N = {
     styleLine: (id) => `画风：${scenePreset(id).label}`,
     exportJson: '导出 JSON',
     gates: '质量门',
-    gatesPass: '全部通过',
     gatesFail: (n) => `${n} 项未过`,
-    gatePill: (okN, total) => `质量门 ${okN} / ${total}`,
     kpi: {
       scenes: '场景', scenesSub: (p2, v) => `主场景 ${p2}${v ? ` · 变体 ${v}` : ''}`,
       propsK: '叙事道具', propsSub: (st) => `${st} 个状态变体`,
@@ -480,9 +481,7 @@ const I18N = {
     styleLine: (id) => `Style: ${({ realistic: 'semi-realistic painterly', ghibli: 'Ghibli-style animation' })[id] ?? id}`,
     exportJson: 'Export JSON',
     gates: 'Quality gates',
-    gatesPass: 'All passed',
     gatesFail: (n) => `${n} gate${n === 1 ? '' : 's'} failed`,
-    gatePill: (okN, total) => `Quality gates ${okN} / ${total}`,
     kpi: {
       scenes: 'Scenes', scenesSub: (p2, v) => `${p2} primary${v ? ` · ${v} variant${v === 1 ? '' : 's'}` : ''}`,
       propsK: 'Narrative props', propsSub: (st) => `${st} state variant${st === 1 ? '' : 's'}`,
@@ -739,7 +738,7 @@ export function renderHtml(doc, ctx = {}) {
   const gateList = `<ul class="gate">
   ${gates
     .map(
-      (g) => `<li class="${g.ok ? 'ok' : 'bad'}"><span class="m">${g.ok ? '✓' : '✗'}</span><span>${esc(gateText(g, t.langCode).label)}${
+      (g) => `<li class="${gateClass(g)}"><span class="m">${gateMarker(g)}</span><span>${esc(gateText(g, t.langCode).label)}${
         g.detail && (!g.ok || g.id === 'no-names') ? `<small>${esc(gateText(g, t.langCode).detail)}</small>` : ''
       }</span></li>`,
     )
@@ -881,6 +880,8 @@ td:first-child{font-family:var(--mono);font-size:12px;color:var(--ink-2);white-s
 .gate li.bad .m{color:var(--seal)}
 .gate li.bad{background:var(--seal-soft);border-radius:2px;padding-left:6px}
 .gate small{display:block;color:var(--ink-3)}
+.gate li.skip .m,.gate li.skip small{color:var(--ink-2)}
+.gate li.skip small{font-size:12px}
 .gsum{margin:10px 0 0;font-size:12px;color:var(--ink-2)}
 .gsum b{color:var(--seal)}
 
@@ -901,7 +902,7 @@ td:first-child{font-family:var(--mono);font-size:12px;color:var(--ink-2);white-s
   <h1>${esc(doc.source)}</h1>
   <span class="sub">${esc(t.kicker)} · ${esc(t.styleLine(doc.style))}</span>
   <span class="right">
-    <span class="gatepill ${failed.length ? 'fail' : 'pass'}">${failed.length ? '✗' : '✓'} ${esc(t.gatePill(gates.length - failed.length, gates.length))}</span>
+    <span class="gatepill ${failed.length ? 'fail' : 'pass'}">${failed.length ? '✗' : '✓'} ${esc(gateSummaryText(gates, t.langCode))}</span>
     <button class="expo" data-name="${esc(slug(doc.source))}-art.json">${esc(t.exportJson)}</button>
   </span>
 </header>
@@ -941,7 +942,7 @@ ${propCards}
 <section class="top-sec" id="sec-gates">
   <div class="sec-h"><span class="no">${props.length ? '05' : '03'}</span><h2>${esc(t.secGates)}</h2></div>
   ${gateList}
-  <p class="gsum">${failed.length ? `<b>${esc(t.gatesFail(failed.length))}</b>` : esc(t.gatesPass)}</p>
+  <p class="gsum">${esc(gateSummaryText(gates, t.langCode))}</p>
 </section>
 
 <p class="foot">${esc(t.colophon)}</p>
@@ -1050,9 +1051,9 @@ function main(argv) {
 
     if (cmd === 'checkup') {
       const gates = gateReport(doc, ctx);
-      for (const g of gates) console.log(`${g.ok ? '✓' : '✗'} ${g.label}${!g.ok && g.detail ? ` — ${g.detail}` : ''}`);
+      for (const g of gates) console.log(`${gateMarker(g)} ${g.label}${(!g.evaluated || !g.ok) && g.detail ? ` — ${g.detail}` : ''}`);
       const failedN = gates.filter((g) => !g.ok).length;
-      console.log(failedN ? `\n✗ ${failedN} 项未过` : '\n✓ 全部通过');
+      console.log(`\n${failedN ? '✗' : '✓'} ${gateSummaryText(gates)}`);
       if (failedN) process.exit(1);
       return;
     }

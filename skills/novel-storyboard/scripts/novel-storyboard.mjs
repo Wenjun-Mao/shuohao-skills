@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Modified by Plotloom, 2026-10-09: truthful evaluated/skipped report checks.
 // Modified by Plotloom, 2026-10-09: frozen limits and planning-only report copy.
 // novel-storyboard — deterministic helpers for the novel-storyboard skill (分镜).
 // Zero dependencies on purpose: the skill must work in any directory
@@ -7,6 +8,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gateClass, gateMarker, gateSummaryText } from './gate-summary.mjs';
 
 /* ------------------------------------------------------------------ */
 /* 常量                                                                */
@@ -419,7 +421,7 @@ export function computeStats(board, script) {
 
 export function gateReport(board, ctx = {}) {
   const gates = [];
-  const add = (id, label, ok, detail = '') => gates.push({ id, label, ok, detail });
+  const add = (id, label, ok, detail = '', evaluated = true) => gates.push({ id, label, ok, detail, evaluated });
   const params = paramsOf(board);
   const script = ctx.script ?? null;
   const expanded = script ? expandScript(script) : null;
@@ -644,33 +646,35 @@ export function gateReport(board, ctx = {}) {
     }
   }
 
-  const SKIP_SCRIPT = '未提供 script.json，本门跳过（视为通过）';
-  const SKIP_NAMES = '未提供 outline/cast，本门跳过（视为通过）';
-  const SKIP_SHOTS = '未挂载配方卡库（--shots <卡片目录>），本门跳过（视为通过）';
+  const SKIP_SCRIPT = '未提供 script.json，本门跳过（未执行，不影响本次校验通过）';
+  const SKIP_NAMES = '未提供 outline/cast，本门跳过（未执行，不影响本次校验通过）';
+  const SKIP_SHOTS = '未挂载配方卡库（--shots <卡片目录>），本门跳过（未执行，不影响本次校验通过）';
+  const namesContextProvided = ctx.outline != null || ctx.cast != null;
   const NO_RECIPE = '本批分镜没有引用配方';
 
-  add('coverage', '剧本节拍被恰好一次、按顺序、连续认领（分镜级）', bad.coverage.length === 0, script ? bad.coverage.join('；') : SKIP_SCRIPT);
+  add('coverage', '剧本节拍被恰好一次、按顺序、连续认领（分镜级）', bad.coverage.length === 0, script ? bad.coverage.join('；') : SKIP_SCRIPT, Boolean(script));
   add('segment-cap', `每段 0 < 总秒数 ≤ ${params.maxSegmentSeconds}（一次生成的上限）`, eps.length > 0 && bad.segCap.length === 0, bad.segCap.join('；'));
   add('cut-length', `每个分镜 ${params.minCutSeconds}–${params.maxCutSeconds} 秒——短剧的注意力节奏`, eps.length > 0 && bad.cutLen.length === 0, bad.cutLen.join('；'));
-  add('dialogue-fit', '认领节拍的台词装得进分镜秒数', bad.fit.length === 0, script ? bad.fit.join('；') : SKIP_SCRIPT);
-  add('ep-duration', `每集总时长在剧本目标 ±${Math.round(params.tolerance * 100)}% 内`, bad.duration.length === 0, script ? bad.duration.join('；') : SKIP_SCRIPT);
+  add('dialogue-fit', '认领节拍的台词装得进分镜秒数', bad.fit.length === 0, script ? bad.fit.join('；') : SKIP_SCRIPT, Boolean(script));
+  add('ep-duration', `每集总时长在剧本目标 ±${Math.round(params.tolerance * 100)}% 内`, bad.duration.length === 0, script ? bad.duration.join('；') : SKIP_SCRIPT, Boolean(script));
   add('crowd', `单个分镜同框 ≤ ${params.maxOnScreen} 人，超了必须带拆解说明`, bad.crowd.length === 0, bad.crowd.join('；'));
   add('segment-id', '段号 E01-01 格式、按顺序连号', bad.id.length === 0, bad.id.join('；'));
   add('size-phrase', '景别短语写进分镜图提示词', bad.size.length === 0, bad.size.join('；'));
   add('camera-phrase', '运镜用 H3 官方词表，且出现在自己的 [Shot k] 段落里', bad.camera.length === 0, bad.camera.join('；'));
   add('h3-structure', 'H3 首行对齐指令由分镜结构推导逐字对账，切点时刻逐个对', eps.length > 0 && bad.h3s.length === 0, bad.h3s.join('；'));
-  add('h3-dialogue', '认领节拍的台词逐字进 H3 提示词的 <d> 块', bad.h3d.length === 0, script ? bad.h3d.join('；') : SKIP_SCRIPT);
+  add('h3-dialogue', '认领节拍的台词逐字进 H3 提示词的 <d> 块', bad.h3d.length === 0, script ? bad.h3d.join('；') : SKIP_SCRIPT, Boolean(script));
   add('h3-lang', `H3 提示词语言与设定一致（promptLang=${promptLang}，正文${promptLang === 'en' ? '全英文' : '中文'}、骨架 token 官方英文格式）`, bad.h3e.length === 0, bad.h3e.join('；'));
   add('style-phrase', `分镜图风格短语统一（${style ? `${styleId}：${style.phrase}` : '预设无效'}）——同剧不许画风漂`, bad.style.length === 0, bad.style.join('；'));
   add('prompt-english', '分镜图提示词全英文且非空', bad.english.length === 0, bad.english.join('；'));
-  add('prompt-no-names', '英文提示词不含角色名（分镜图提示词恒查；中文 H3 提示词放行）', bad.names.length === 0, banned.length ? bad.names.join('；') : SKIP_NAMES);
-  add('refs', '场次／人物／道具对账剧本', bad.refs.length === 0, script ? bad.refs.join('；') : SKIP_SCRIPT);
+  add('prompt-no-names', '英文提示词不含角色名（分镜图提示词恒查；中文 H3 提示词放行）', bad.names.length === 0, !namesContextProvided ? SKIP_NAMES : banned.length ? bad.names.join('；') : '已提供 outline/cast，无角色姓名需要核对', namesContextProvided);
+  add('refs', '场次／人物／道具对账剧本', bad.refs.length === 0, script ? bad.refs.join('；') : SKIP_SCRIPT, Boolean(script));
   // 可选挂载的门放最后：没给 --shots 就跳过；给了但全篇没引用配方也算通过，但要明说，不静默
   add(
     'shot-recipe',
     '引用的配方存在、必备短语进了分镜图提示词、多格配方连排够格数',
     bad.recipe.length === 0,
     recipes ? (bad.recipe.length ? bad.recipe.join('；') : recipeRefs ? '' : NO_RECIPE) : SKIP_SHOTS,
+    recipes != null,
   );
 
   return gates;
@@ -845,13 +849,14 @@ const GATE_LABELS_EN = {
   'shot-recipe': 'Referenced recipes exist, their must-phrases are in the frame prompt, multi-cut recipes run long enough',
 };
 const GATE_SKIPS_EN = {
-    '未提供 outline.json，本门跳过（视为通过）': 'outline.json not provided — gate skipped (treated as passing)',
-    '未提供 art.json，本门跳过（视为通过）': 'art.json not provided — gate skipped (treated as passing)',
-    '未提供 script.json，本门跳过（视为通过）': 'script.json not provided — gate skipped (treated as passing)',
-    '未提供 outline/cast，本门跳过（视为通过）': 'outline/cast not provided — gate skipped (treated as passing)',
-    '未提供 cast.json，本门跳过（视为通过）': 'cast.json not provided — gate skipped (treated as passing)',
-    '未挂载配方卡库（--shots <卡片目录>），本门跳过（视为通过）': 'no recipe card library mounted (--shots <cards dir>) — gate skipped (treated as passing)',
+    '未提供 outline.json，本门跳过（未执行，不影响本次校验通过）': 'outline.json not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 art.json，本门跳过（未执行，不影响本次校验通过）': 'art.json not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 script.json，本门跳过（未执行，不影响本次校验通过）': 'script.json not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 outline/cast，本门跳过（未执行，不影响本次校验通过）': 'outline/cast not provided — gate skipped (not evaluated; does not block validation)',
+    '未提供 cast.json，本门跳过（未执行，不影响本次校验通过）': 'cast.json not provided — gate skipped (not evaluated; does not block validation)',
+    '未挂载配方卡库（--shots <卡片目录>），本门跳过（未执行，不影响本次校验通过）': 'no recipe card library mounted (--shots <cards dir>) — gate skipped (not evaluated; does not block validation)',
     '本批分镜没有引用配方': 'no cut in this batch references a recipe',
+    '已提供 outline/cast，无角色姓名需要核对': 'outline/cast provided — no character names to check',
 };
 /** 报告里的门文案：英文界面取映射，未命中或中文界面回落原文。 */
 const gateText = (g, lang) => {
@@ -870,13 +875,11 @@ const I18N = {
     docTitle: (s, a, b) => `${s} · 分镜${a === b ? `（第 ${a} 集）` : `（第 ${a}–${b} 集）`}`,
     epRange: (a, b) => (a === b ? `第 ${a} 集` : `第 ${a}–${b} 集`),
     exportJson: '导出 JSON',
-    gatesPass: '全部通过',
     gatesFail: (n) => `${n} 项未过`,
-    gatePill: (okN, total) => `质量门 ${okN} / ${total}`,
     kpi: {
       segments: '规划视频段', segmentsSub: (cap) => `规划上限 ${cap} 秒；非执行记录`,
       cuts: '分镜', cutsSub: (avg) => `平均 ${avg} 秒一切`,
-      time: '预估总时长', timeSub: (t) => `目标 ${t}`,
+      time: '全部条目合计时长', timeSub: (t) => `目标合计 ${t}；非单条路线时长`,
       batches: '建议分组', batchesSub: '按场景与光照归组；非实际任务批次',
       lines: '台词段', linesSub: '其余是纯画面段',
     },
@@ -931,13 +934,11 @@ const I18N = {
     docTitle: (s, a, b) => `${s} · Storyboard (${a === b ? `Episode ${a}` : `Episodes ${a}–${b}`})`,
     epRange: (a, b) => (a === b ? `Episode ${a}` : `Episodes ${a}–${b}`),
     exportJson: 'Export JSON',
-    gatesPass: 'All passed',
     gatesFail: (n) => `${n} failed`,
-    gatePill: (okN, total) => `Quality gates ${okN} / ${total}`,
     kpi: {
       segments: 'Planned segments', segmentsSub: (cap) => `planned cap ${cap}s; not an execution record`,
       cuts: 'Cuts', cutsSub: (avg) => `${avg}s per cut on average`,
-      time: 'Estimated total', timeSub: (t) => `target ${t}`,
+      time: 'All entries combined', timeSub: (t) => `combined target ${t}; not one route`,
       batches: 'Suggested groups', batchesSub: 'grouped by scene + lighting; not an execution record',
       lines: 'Dialogue segments', linesSub: 'the rest are picture-only',
     },
@@ -1268,7 +1269,7 @@ ${cards}
   ${gates
     .map(
       // 通过的门只有跳过说明与「没有引用配方」这类备注带 detail——都要显示出来，不静默
-      (g) => `<li class="${g.ok ? 'ok' : 'bad'}"><span class="m">${g.ok ? '✓' : '✗'}</span><span>${esc(gateText(g, t.langCode).label)}${
+      (g) => `<li class="${gateClass(g)}"><span class="m">${gateMarker(g)}</span><span>${esc(gateText(g, t.langCode).label)}${
         g.detail ? `<small>${esc(gateText(g, t.langCode).detail)}</small>` : ''
       }</span></li>`,
     )
@@ -1451,6 +1452,8 @@ td.serif{font-family:var(--serif)}
 .gate li.bad .m{color:var(--seal)}
 .gate li.bad{background:var(--seal-soft);border-radius:2px;padding-left:6px}
 .gate small{display:block;color:var(--ink-3)}
+.gate li.skip .m,.gate li.skip small{color:var(--ink-2)}
+.gate li.skip small{font-size:12px}
 .gsum{margin:10px 0 0;font-size:12px;color:var(--ink-2)}
 .gsum b{color:var(--seal)}
 
@@ -1479,7 +1482,7 @@ td.serif{font-family:var(--serif)}
   <h1>${esc(board.source)}</h1>
   <span class="sub">${esc(t.kicker)} · ${esc(t.epRange(eps[0]?.ep, eps[eps.length - 1]?.ep))}</span>
   <span class="right">
-    <span class="gatepill ${failed.length ? 'fail' : 'pass'}">${failed.length ? '✗' : '✓'} ${esc(t.gatePill(gates.length - failed.length, gates.length))}</span>
+    <span class="gatepill ${failed.length ? 'fail' : 'pass'}">${failed.length ? '✗' : '✓'} ${esc(gateSummaryText(gates, t.langCode))}</span>
     <button class="expo" data-name="${esc(slug(board.source))}-storyboard.json">${esc(t.exportJson)}</button>
   </span>
 </header>
@@ -1524,7 +1527,7 @@ ${dlgRows}
 <section class="top-sec" id="sec-gates">
   <div class="sec-h"><span class="no">05</span><h2>${esc(t.secGates)}</h2></div>
   ${gateList}
-  <p class="gsum">${failed.length ? `<b>${esc(t.gatesFail(failed.length))}</b>` : esc(t.gatesPass)}</p>
+  <p class="gsum">${esc(gateSummaryText(gates, t.langCode))}</p>
 </section>
 
 <p class="foot">${esc(t.colophon(params))}</p>
@@ -1701,9 +1704,9 @@ function main(argv) {
     if (cmd === 'checkup') {
       const gates = gateReport(board, ctx);
       logGates(gates);
-      for (const g of gates) console.log(`${g.ok ? '✓' : '✗'} ${g.label}${g.detail ? ` — ${g.detail}` : ''}`);
+      for (const g of gates) console.log(`${gateMarker(g)} ${g.label}${g.detail ? ` — ${g.detail}` : ''}`);
       const failedN = gates.filter((g) => !g.ok).length;
-      console.log(failedN ? `\n✗ ${failedN} 项未过` : '\n✓ 全部通过');
+      console.log(`\n${failedN ? '✗' : '✓'} ${gateSummaryText(gates)}`);
       // 建议景别／运镜的偏离只在这里提示，不进门——配方是语汇不是法条，
       // 而且可选挂载的东西一旦变严就没人挂了
       if (ctx.recipes) {
@@ -1782,7 +1785,7 @@ function main(argv) {
     }
     const allGates = gateReport({ episodes: [] }, {}).map((g) => g.id);
     const s = summarizeGateLog(entries, allGates);
-    console.log(`跑过 ${s.runs} 次，其中 ${s.cleanRuns} 次全过 · 累计 ${s.fails} 条失败\n`);
+    console.log(`跑过 ${s.runs} 次，其中 ${s.cleanRuns} 次无失败记录 · 累计 ${s.fails} 条失败\n`);
     if (s.ranked.length) {
       console.log('最常响的门（那条规则模型最常无视，措辞该改）：');
       for (const r of s.ranked) {
